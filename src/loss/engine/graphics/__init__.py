@@ -1,9 +1,5 @@
+from __future__ import annotations
 from ..common import math as m
-
-import jax.numpy as np
-
-def deg_to_rad(deg):
-  return deg * np.pi / 180.0
 
 class GrProjection:
   def __init__(self):
@@ -18,7 +14,7 @@ class GrProjection:
     self._mat = m.MMat4x4()
     self._dirty = True
 
-  def assign(self, rhs):
+  def assign(self, rhs: GrProjection):
     self._fov = rhs._fov
     self._near_clip.assign(rhs._near_clip)
     self._far_dist = rhs._far_dist
@@ -31,13 +27,13 @@ class GrProjection:
     self._dirty = rhs._dirty
 
   @classmethod
-  def perspective(cls, fov, far_dist, aspect, near_clip_plane):
+  def perspective(cls, fov, far_dist, aspect, near_clip_plane: m.MPlane):
     self = cls()
     self._fov = fov
     self._far_dist = far_dist
     self._aspect = aspect
     self._near_clip.assign(near_clip_plane)
-    assert self._fov >= 0.0
+    # assert self._fov >= 0.0
     return self
 
   def __repr__(self):
@@ -51,11 +47,6 @@ class GrProjection:
   def fov(self):
     return self._fov
 
-  @fov.setter
-  def fov(self, value):
-    self._dirty = True
-    self._fov = value
-
   @property
   def width(self):
     return self._right - self._left
@@ -68,70 +59,67 @@ class GrProjection:
   def near_clip(self):
     return self._near_clip
 
-  @near_clip.setter
-  def near_clip(self, value):
-    self._dirty = True
-    self._near_clip = value
-
   @property
   def far_dist(self):
     return self._far_dist
-
-  @far_dist.setter
-  def far_dist(self, value):
-    self._dirty = True
-    self._far_dist = value
 
   @property
   def aspect(self):
     return self._aspect
 
-  @aspect.setter
-  def aspect(self, value):
-    self._dirty = True
-    self._aspect = value
-
   @property
   def left(self):
     return self._left
-
-  @left.setter
-  def left(self, value):
-    self._dirty = True
-    self._left = value
 
   @property
   def right(self):
     return self._right
 
-  @right.setter
-  def right(self, value):
-    self._dirty = True
-    self._right = value
-
   @property
   def top(self):
     return self._top
-
-  @top.setter
-  def top(self, value):
-    self._dirty = True
-    self._top = value
 
   @property
   def bottom(self):
     return self._bottom
 
-  @bottom.setter
-  def bottom(self, value):
+  def set_fov(self, value):
+    self._dirty = True
+    self._fov = value
+
+  def set_near_clip(self, value):
+    self._dirty = True
+    self._near_clip = value
+
+  def set_far_dist(self, value):
+    self._dirty = True
+    self._far_dist = value
+
+  def set_aspect(self, value):
+    self._dirty = True
+    self._aspect = value
+
+  def set_left(self, value):
+    self._dirty = True
+    self._left = value
+
+  def set_right(self, value):
+    self._dirty = True
+    self._right = value
+
+  def set_top(self, value):
+    self._dirty = True
+    self._top = value
+
+  def set_bottom(self, value):
     self._dirty = True
     self._bottom = value
 
   @property
   def matrix(self):
     if self._dirty:
-      assert abs(self._right - self._left) > 0.0001
-      assert abs(self._top - self._bottom) > 0.0001
+      # assert abs(self._right - self._left) > 0.0001
+      # assert abs(self._top - self._bottom) > 0.0001
 
       xScale = 2.0 / ( self._right - self._left )
       yScale = 2.0 / ( self._top - self._bottom )
@@ -139,7 +127,7 @@ class GrProjection:
       yOffset = ( self._top + self._bottom ) / ( self._top - self._bottom )
 
       if not self.is_ortho:
-        projNear = 1.0 / np.tan( self._fov * 0.5 )
+        projNear = 1.0 / m.Tan( self._fov * 0.5 )
 
         self._mat[ 0, 0 ] = xScale * projNear / ( self._aspect )
         self._mat[ 0, 1 ] = 0.0
@@ -203,7 +191,7 @@ class GrProjection:
 
 class GrCamera:
   def __init__(self):
-    self._proj = GrProjection.perspective( deg_to_rad(90.0), 1000.0, 1.0, m.MPlane( m.MVec3( 0.0, 0.0, -1.0 ), m.MVec3( 0.0, 0.0, -1.0 ) ) )
+    self._proj = GrProjection.perspective( m.deg_to_rad(90.0), 1000.0, 1.0, m.MPlane( m.MVec3( 0.0, 0.0, -1.0 ), m.MVec3( 0.0, 0.0, -1.0 ) ) )
     self._pos = m.MVec3()
     self._rot = m.MMat3x3()
     self._far_cull = 1000.0
@@ -223,8 +211,7 @@ class GrCamera:
   def pos(self):
     return self._pos
 
-  @pos.setter
-  def pos(self, pos):
+  def set_pos(self, pos):
     self._pos.assign(pos)
     self._dirty = True
 
@@ -232,8 +219,7 @@ class GrCamera:
   def rot(self):
     return self._rot
 
-  @rot.setter
-  def rot(self, rot):
+  def set_rot(self, rot):
     self._rot.assign(rot)
     self._dirty = True
 
@@ -241,8 +227,7 @@ class GrCamera:
   def proj(self):
     return self._proj
 
-  @proj.setter
-  def proj(self, proj):
+  def set_proj(self, proj):
     self._proj.assign(proj)
     self._dirty = True
 
@@ -286,12 +271,16 @@ class GrCamera:
     look = tainted_dir.normalized()
 
     # compute the new x basis.
-    if abs( look.y ) > 0.999:
-      # compensate for trying to look directly up or down.
-      right = m.MVec3(1, 0, 0)
-    else:
-      right = look.cross( world_up )
-      right.normalize()
+
+    # if abs( look.y ) > 0.999:
+    #   # TODO: compensate for trying to look directly up or down?
+    #   right = m.MVec3(1, 0, 0)
+    # else:
+    #   right = look.cross( world_up )
+    #   right.normalize()
+
+    right = look.cross( world_up )
+    right.normalize()
 
     # compute the new y basis.
     up = right.cross( look )
@@ -303,9 +292,6 @@ class GrCamera:
 
   def update_matrices(self):
     assert self._dirty
-
-    # mark the matrices as up to date.
-    self._dirty = False
 
     # create the projection matrix.
     projMatrix = self._proj.matrix
@@ -337,6 +323,9 @@ class GrCamera:
     # # do we have a reflection?
     # if xAxis.cross( yAxis ).dot( zAxis ) < 0.0:
     #   reflection = True;
+
+    # mark the matrices as up to date.
+    self._dirty = False
 
   def build_world_matrix(self):
     return m.MMat4x4( self.rot, self.pos )

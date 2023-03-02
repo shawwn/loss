@@ -3,12 +3,67 @@ import numpy as onp
 import jax.numpy as np
 import math
 import functools
+import operator
 
 
-def inv_sqrt(x):
-  return 1.0 / np.sqrt(x)
+def V(*args, dtype=np.float32):
+  if len(args) == 1:
+    return np.asarray(args[0], dtype=dtype)
+  assert len(args) > 1
+  return np.array(args, dtype=dtype)
 
-def _data(v, dtype):
+def Flat(x): return np.reshape(x, [-1])
+
+def Eye(size, dtype=np.float32): return np.eye(size, dtype=dtype)
+
+def Pi(): return np.pi
+
+def Abs(x): return np.abs(x)
+def Neg(x): return np.negative(x)
+def Pos(x): return np.positive(x)
+def Sqrt(x): return np.sqrt(x)
+def Inv(x): return np.reciprocal(x)
+def InvSqrt(x): return Inv(Sqrt(x))
+
+def Sin(x): return np.sin(x)
+def Cos(x): return np.cos(x)
+def Tan(x): return np.tan(x)
+
+def ASin(x): return np.arcsin(x)
+def ACos(x): return np.arccos(x)
+def ATan(x): return np.arctan(x)
+def ATan2(x, y): return np.arctan2(x, y)
+
+def Less(x, y): return np.less(x, y).all()
+def Equal(x, y): return np.equal(x, y).all()
+
+def Dot(x, y): return np.dot(x, y)
+def MatMul(x, y): return np.matmul(x, y)
+def Add(x, y): return np.add(x, y)
+def Sub(x, y): return np.subtract(x, y)
+def Mul(x, y): return np.multiply(x, y)
+def Div(x, y): return np.divide(x, y)
+
+def MatrixInverse(x): return np.linalg.inv(x)
+
+def DegToRad(deg): return deg * (Pi() / 180.0)
+def RadToDeg(rad): return rad * (180.0 / Pi())
+
+def ShapeOf(v): return np.shape(v)
+def NumEl(v): return onp.prod(ShapeOf(v))
+
+def IsVector(v): return hasattr(v, 'x') and hasattr(v, 'y')
+
+def GetDType(v):
+  if isinstance(v, np.dtype):
+    return v
+  if hasattr(v, 'dtype'):
+    return v.dtype
+  if hasattr(v, '_data'):
+    return GetDType(v._data)
+  raise ValueError("Can't determine dtype", v)
+
+def GetData(v, dtype):
   # #if isinstance(v, np.ndarray):
   # #  return v
   # #if isinstance(v, MData):
@@ -18,16 +73,12 @@ def _data(v, dtype):
   # if isinstance(v, (tuple, list)):
   #   return np.asarray(v, dtype=dtype)
   # return v
-  return np.asarray(v, dtype=dtype)
+  return np.asarray(v, dtype=GetDType(dtype))
 
-def _data_assign(lhs, rhs):
-  if rhs.ndim == 1:
-    lhs[0:len(rhs)] = rhs[:]
-  else:
-    for i in range(len(rhs)):
-      _data_assign(lhs[i], rhs[i])
+def SetAt(v, i, value):
+  value = GetData(value, GetDType(v))
+  return v.at[i].set(value)
 
-@functools.total_ordering
 class MData:
   def __init__(self, data):
     self._data = data
@@ -35,48 +86,54 @@ class MData:
   def __jax_array__(self):
     return self._data
 
-  def __matmul__(self, v): return self.__class__(self._data @ _data(v, self._data.dtype))
+  def data_from(self, v):
+    return GetData(v, self.dtype)
 
-  def __add__(self, v): return self.__class__(self._data + _data(v, self._data.dtype))
-  def __sub__(self, v): return self.__class__(self._data - _data(v, self._data.dtype))
-  def __mul__(self, v): return self.__class__(self._data * _data(v, self._data.dtype))
-  def __radd__(self, v): return self.__class__(self._data + _data(v, self._data.dtype))
-  def __rsub__(self, v): return self.__class__(self._data - _data(v, self._data.dtype))
-  def __rmul__(self, v): return self.__class__(self._data * _data(v, self._data.dtype))
-  def __neg__(self): return self.__class__(- self._data)
-  def __pos__(self): return self.__class__(+ self._data)
-  def __abs__(self): return self.__class__(np.abs(self._data))
-  #def __trunc__(self): return self.__class__(math.trunc(self._data))
+  @classmethod
+  def new(cls, x):
+    return cls(x)
 
-  def __lt__(self, other):
-    return np.less(self._data, _data(other, self._data.dtype)).all()
+  def binary_op(self, op, v):
+    return self.new(op(self._data, self.data_from(v)))
+
+  def unary_op(self, op):
+    return self.new(op(self._data))
+
+
+  def __matmul__(self, v): return self.binary_op(MatMul, v)
+
+  def __add__(self, v): return self.binary_op(Add, v)
+  def __sub__(self, v): return self.binary_op(Sub, v)
+  def __mul__(self, v): return self.binary_op(Mul, v)
+  def __radd__(self, v): return self.binary_op(Add, v)
+  def __rsub__(self, v): return self.binary_op(Sub, v)
+  def __rmul__(self, v): return self.binary_op(Mul, v)
+  def __neg__(self, v): return self.unary_op(Neg)
+  def __pos__(self, v): return self.unary_op(Pos)
+  def __abs__(self): return self.unary_op(Abs)
 
   def __eq__(self, other):
-    return np.equal(self._data, _data(other, self._data.dtype)).all()
+    return self.binary_op(Equal, other)
 
   def __getitem__(self, i):
     return self._data[i]
 
   def __setitem__(self, i, value):
-    self._data = self._data.at[i].set(value)
+    self._data = SetAt(self._data, i, value)
 
   def assign(self, rhs):
-    self[:] = _data(rhs, self._data.dtype)[:]
-    #_data_assign(self._data, _data(rhs, self._data.dtype))
+    self[:] = self.data_from(rhs)[:]
 
   @property
-  def data(self):
-    return self._data[:]
-
-  def astype(self, dtype):
-    return self._data.astype(dtype)
+  def dtype(self):
+    return GetDType(self._data)
 
 
 class MVec3(MData):
   def __init__(self, *args):
-    super().__init__(np.array([0.0, 0.0, 0.0], dtype=np.float32))
+    super().__init__(V(0.0, 0.0, 0.0))
     if len(args) == 1:
-      self[:] = _data(args[0], self._data.dtype)
+      self[:] = args[0]
     elif len(args) == 3:
       self[0] = args[0]
       self[1] = args[1]
@@ -102,28 +159,28 @@ class MVec3(MData):
   def x(self):
     return self._data[0]
 
-  @x.setter
-  def x(self, value):
-    self[0] = value
-
   @property
   def y(self):
     return self._data[1]
 
-  @y.setter
-  def y(self, value):
-    self[1] = value
-
   @property
   def z(self):
     return self._data[2]
+
+  @x.setter
+  def x(self, value):
+    self[0] = value
+
+  @y.setter
+  def y(self, value):
+    self[1] = value
 
   @z.setter
   def z(self, value):
     self[2] = value
 
   def dot(self, v):
-    return np.dot(self._data, _data(v, self._data.dtype))
+    return Dot(self._data, self.data_from(v))
 
   @property
   def mag_sqr(self):
@@ -134,41 +191,42 @@ class MVec3(MData):
 
   @property
   def mag(self):
-    return np.sqrt(self.mag_sqr)
+    return Sqrt(self.mag_sqr)
 
   def normalize(self):
-    invMag = 1.0 / self.mag
+    invMag = Inv(self.mag)
     self.x *= invMag
     self.y *= invMag
     self.z *= invMag
 
   def normalized(self):
-    r = self.__class__(self)
+    r = self.new(self)
     r.normalize()
     return r
 
   def cross(self, v):
     _data = self._data
-    return MVec3( _data[ 1 ]*v._data[ 2 ] - _data[ 2 ]*v._data[ 1 ],
-                  _data[ 2 ]*v._data[ 0 ] - _data[ 0 ]*v._data[ 2 ],
-                  _data[ 0 ]*v._data[ 1 ] - _data[ 1 ]*v._data[ 0 ] )
+    v_data = self.data_from(v)
+    return MVec3( _data[ 1 ]*v_data[ 2 ] - _data[ 2 ]*v_data[ 1 ],
+                  _data[ 2 ]*v_data[ 0 ] - _data[ 0 ]*v_data[ 2 ],
+                  _data[ 0 ]*v_data[ 1 ] - _data[ 1 ]*v_data[ 0 ] )
 
   def invert(self):
-    self.x = 1.0 / self.x
-    self.y = 1.0 / self.y
-    self.z = 1.0 / self.z
+    self.x = Inv(self.x)
+    self.y = Inv(self.y)
+    self.z = Inv(self.z)
 
   def inverted(self):
-    r = self.__class__(self)
+    r = self.new(self)
     r.invert()
     return r
 
 
 class MVec4(MData):
   def __init__(self, *args):
-    super().__init__(np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32))
+    super().__init__(V(0.0, 0.0, 0.0, 0.0))
     if len(args) == 1:
-      self[:] = _data(args[0], self._data.dtype)
+      self[:] = args[0]
     elif len(args) == 4:
       self[0] = args[0]
       self[1] = args[1]
@@ -195,29 +253,29 @@ class MVec4(MData):
   def x(self):
     return self._data[0]
 
-  @x.setter
-  def x(self, value):
-    self[0] = value
-
   @property
   def y(self):
     return self._data[1]
-
-  @y.setter
-  def y(self, value):
-    self[1] = value
 
   @property
   def z(self):
     return self._data[2]
 
-  @z.setter
-  def z(self, value):
-    self[2] = value
-
   @property
   def w(self):
     return self._data[3]
+
+  @x.setter
+  def x(self, value):
+    self[0] = value
+
+  @y.setter
+  def y(self, value):
+    self[1] = value
+
+  @z.setter
+  def z(self, value):
+    self[2] = value
 
   @w.setter
   def w(self, value):
@@ -226,10 +284,9 @@ class MVec4(MData):
 
 class MMat3x3(MData):
   def __init__(self, *args):
-    super().__init__(np.eye(3))
+    super().__init__(Eye(3))
     if len(args) == 1:
-      v = args[0]
-      self.assign(v)
+      self.assign(args[0])
     elif len(args) == 9:
       self[ 0, 0 ] = args[ 0 ]
       self[ 0, 1 ] = args[ 1 ]
@@ -253,37 +310,40 @@ class MMat3x3(MData):
     return r
 
   def get_at(self, i):
-    return self._data[i // 3, i % 3]
+    # i = operator.index(i)
+    # return self._data[i // 3, i % 3]
+    return Flat(self._data)[i]
 
   def set_at(self, i, value):
+    i = operator.index(i)
     self[i // 3, i % 3] = value
 
   def get_col(self, i):
     return MVec3(
-        self._data[ 0,  i ],
-        self._data[ 1,  i ],
-        self._data[ 2,  i ])
+        self[ 0,  i ],
+        self[ 1,  i ],
+        self[ 2,  i ])
 
   def set_col(self, i, col):
-    col = _data( col, self._data.dtype )
+    col = self.data_from(col)
     self[ 0, i ] = col[0]
     self[ 1, i ] = col[1]
     self[ 2, i ] = col[2]
 
   def transpose(self):
-    self[0, 1], self[1, 0] = self._data[1, 0], self._data[0, 1]
-    self[0, 2], self[2, 0] = self._data[2, 0], self._data[0, 2]
-    self[0, 3], self[3, 0] = self._data[3, 0], self._data[0, 3]
+    self[0, 1], self[1, 0] = self[1, 0], self[0, 1]
+    self[0, 2], self[2, 0] = self[2, 0], self[0, 2]
+    self[0, 3], self[3, 0] = self[3, 0], self[0, 3]
 
   def transposed(self):
-    return self.__class__(
-        self._data[0, 0], self._data[1, 0], self._data[2, 0],
-        self._data[0, 1], self._data[1, 1], self._data[2, 1],
-        self._data[0, 2], self._data[1, 2], self._data[2, 2])
+    return self.new(
+        self[0, 0], self[1, 0], self[2, 0],
+        self[0, 1], self[1, 1], self[2, 1],
+        self[0, 2], self[1, 2], self[2, 2])
 
   # def inverse_transposed(self, output: MMat3x3 = None):
   #   if output is None:
-  #     r = self.__class__()
+  #     r = self.new()
   #     assert self.inverse_transposed(r)
   #     return r
   #   if not output.inverse(output):
@@ -295,42 +355,218 @@ class MMat3x3(MData):
     return self.inverse().transposed()
 
   def __mul__(self, m):
-    return self.__class__(np.matmul(self._data, _data(m, self._data.dtype)))
+    return self.binary_op(MatMul, m)
 
-  def inverse(self, output=None):
-    if output is None:
-      r = self.__class__()
-      assert self.inverse(r)
-      return r
-    try:
-      m = np.linalg.inv(self._data)
-      output.assign(m)
-      return True
-    except np.linalg.LinAlgError: # TODO: What's the JAX equivalent of this?
-      return False
+  def inverse(self):
+    return MatrixInverse(self._data)
 
   def rotate_point(self, point):
-    point = _data(point, self._data.dtype)
+    point = self.data_from(point)
+    _data = Flat(self._data)
     return MVec3(
-      self.get_at( 0 ) * point[0] + self.get_at( 1 ) * point[1] + self.get_at( 2 ) * point[2],
-      self.get_at( 3 ) * point[0] + self.get_at( 4 ) * point[1] + self.get_at( 5 ) * point[2],
-      self.get_at( 6 ) * point[0] + self.get_at( 7 ) * point[1] + self.get_at( 8 ) * point[2] )
+      _data[ 0 ] * point[0] + _data[ 1 ] * point[1] + _data[ 2 ] * point[2],
+      _data[ 3 ] * point[0] + _data[ 4 ] * point[1] + _data[ 5 ] * point[2],
+      _data[ 6 ] * point[0] + _data[ 7 ] * point[1] + _data[ 8 ] * point[2] )
 
   def rotate_point_fast(self, point):
-    x = self.get_at( 0 ) * point.x + self.get_at( 1 ) * point.y + self.get_at( 2 ) * point.z
-    y = self.get_at( 3 ) * point.x + self.get_at( 4 ) * point.y + self.get_at( 5 ) * point.z
-    z = self.get_at( 6 ) * point.x + self.get_at( 7 ) * point.y + self.get_at( 8 ) * point.z
+    _data = Flat(self._data)
+    x = _data[ 0 ] * point.x + _data[ 1 ] * point.y + _data[ 2 ] * point.z
+    y = _data[ 3 ] * point.x + _data[ 4 ] * point.y + _data[ 5 ] * point.z
+    z = _data[ 6 ] * point.x + _data[ 7 ] * point.y + _data[ 8 ] * point.z
     point.x = x
     point.y = y
     point.z = z
 
 
+  # //----------------------------------------------------------
+  # void
+  # MMat3x3::ToEulerYXZ( float& y, float& x, float& z )
+  # {
+  #     // singularity at north pole
+  #     if ( _data[ 3 ] > 0.998 ) {
+  #         y = ATan2( _data[ 2 ], _data[ 8 ] );
+  #         z = HALF_PI;
+  #         x = 0.0f;
+  #         return;
+  #     }
+  #
+  #     // singularity at south pole
+  #     if ( _data[ 3 ] < -0.998 ) {
+  #         y = ATan2( _data[ 2 ], _data[ 8 ] );
+  #         z = -HALF_PI;
+  #         x = 0.0f;
+  #         return;
+  #     }
+  #
+  #     // matrix to euler, normal case.
+  #     y = ATan2( -_data[ 6 ], _data[ 0 ] );
+  #     x = ATan2( -_data[ 5 ], _data[ 4 ] );
+  #     z = ASin( _data[ 3 ] );
+  # }
+  def to_euler_yxz(self):
+    _data = Flat(self._data)
+    #
+    # TODO: handle singularity at north pole?
+    # if ( _data[ 3 ] > 0.998 ) {
+    #     y = ATan2( _data[ 2 ], _data[ 8 ] );
+    #     z = HALF_PI;
+    #     x = 0.0f;
+    #     return;
+    # }
+    #
+    # TODO: handle singularity at south pole?
+    # if ( _data[ 3 ] < -0.998 ) {
+    #     y = ATan2( _data[ 2 ], _data[ 8 ] );
+    #     z = -HALF_PI;
+    #     x = 0.0f;
+    #     return;
+    # }
+    #
+    # matrix to euler, normal case.
+    y = ATan2( -_data[6], _data[0] )
+    x = ATan2( -_data[5], _data[4] )
+    z = ASin( _data[3] )
+    return y, x, z
+
+
+  # //----------------------------------------------------------
+  # void
+  # MMat3x3::FromEulerYXZ( float y, float x, float z )
+  # {
+  #     // Assuming the angles are in radians.
+  #     float ch = Cos( y );
+  #     float sh = Sin( y );
+  #     float cb = Cos( x );
+  #     float sb = Sin( x );
+  #     float ca = Cos( z );
+  #     float sa = Sin( z );
+  #
+  #     _data[ 0 ] = ch * ca;
+  #     _data[ 1 ] = sh*sb - ch*sa*cb;
+  #     _data[ 2 ] = ch*sa*sb + sh*cb;
+  #     _data[ 3 ] = sa;
+  #     _data[ 4 ] = ca*cb;
+  #     _data[ 5 ] = -ca*sb;
+  #     _data[ 6 ] = -sh*ca;
+  #     _data[ 7 ] = sh*sa*cb + ch*sb;
+  #     _data[ 8 ] = -sh*sa*sb + ch*cb;
+  # }
+  @classmethod
+  def from_euler_yxz(cls, y, x, z):
+    # Assuming the angles are in radians.
+    ch = Cos( y )
+    sh = Sin( y )
+    cb = Cos( x )
+    sb = Sin( x )
+    ca = Cos( z )
+    sa = Sin( z )
+
+    _0 = ch * ca
+    _1 = sh*sb - ch*sa*cb
+    _2 = ch*sa*sb + sh*cb
+    _3 = sa
+    _4 = ca*cb
+    _5 = -ca*sb
+    _6 = -sh*ca
+    _7 = sh*sa*cb + ch*sb
+    _8 = -sh*sa*sb + ch*cb
+    return cls(_0, _1, _2,
+               _3, _4, _5,
+               _6, _7, _8)
+
+  # //----------------------------------------------------------
+  # void
+  # MMat3x3::MakeXRotation( float angleInRad )
+  # {
+  #     _data[ 0 ] = 1.0f;
+  #     _data[ 1 ] = 0.0f;
+  #     _data[ 2 ] = 0.0f;
+  #     _data[ 3 ] = 0.0f;
+  #     _data[ 4 ] = Cos( angleInRad );
+  #     _data[ 5 ] = -Sin( angleInRad );
+  #     _data[ 6 ] = 0.0f;
+  #     _data[ 7 ] = Sin( angleInRad );
+  #     _data[ 8 ] = Cos( angleInRad );
+  # }
+  @classmethod
+  def make_x_rotation(cls, angleInRad):
+    _0 = 1.0
+    _1 = 0.0
+    _2 = 0.0
+    _3 = 0.0
+    _4 = Cos( angleInRad )
+    _5 = -Sin( angleInRad )
+    _6 = 0.0
+    _7 = Sin( angleInRad )
+    _8 = Cos( angleInRad )
+    return cls(_0, _1, _2,
+               _3, _4, _5,
+               _6, _7, _8)
+
+  # //----------------------------------------------------------
+  # void
+  # MMat3x3::MakeYRotation( float angleInRad )
+  # {
+  #     _data[ 0 ] = Cos( angleInRad );
+  #     _data[ 1 ] = 0.0f;
+  #     _data[ 2 ] = Sin( angleInRad );
+  #     _data[ 3 ] = 0.0f;
+  #     _data[ 4 ] = 1.0f;
+  #     _data[ 5 ] = 0.0f;
+  #     _data[ 6 ] = -Sin( angleInRad );
+  #     _data[ 7 ] = 0.0f;
+  #     _data[ 8 ] = Cos( angleInRad );
+  # }
+  @classmethod
+  def make_y_rotation(cls, angleInRad):
+    _0 = Cos( angleInRad )
+    _1 = 0.0
+    _2 = Sin( angleInRad )
+    _3 = 0.0
+    _4 = 1.0
+    _5 = 0.0
+    _6 = -Sin( angleInRad )
+    _7 = 0.0
+    _8 = Cos( angleInRad )
+    return cls(_0, _1, _2,
+               _3, _4, _5,
+               _6, _7, _8)
+
+  # //----------------------------------------------------------
+  # void
+  # MMat3x3::MakeZRotation( float angleInRad )
+  # {
+  #     _data[ 0 ] = Cos( angleInRad );
+  #     _data[ 1 ] = -Sin( angleInRad );
+  #     _data[ 2 ] = 0.0f;
+  #     _data[ 3 ] = Sin( angleInRad );
+  #     _data[ 4 ] = Cos( angleInRad );
+  #     _data[ 5 ] = 0.0f;
+  #     _data[ 6 ] = 0.0f;
+  #     _data[ 7 ] = 0.0f;
+  #     _data[ 8 ] = 1.0f;
+  # }
+  @classmethod
+  def make_z_rotation(cls, angleInRad):
+    _0  = Cos( angleInRad )
+    _1  = -Sin( angleInRad )
+    _2  = 0.0
+    _3  = Sin( angleInRad )
+    _4  = Cos( angleInRad )
+    _5  = 0.0
+    _6  = 0.0
+    _7  = 0.0
+    _8  = 1.0
+    return cls(_0, _1, _2,
+               _3, _4, _5,
+               _6, _7, _8)
+
 class MMat4x4(MData):
   def __init__(self, *args):
-    super().__init__(np.eye(4))
+    super().__init__(Eye(4))
     if len(args) == 1:
-      v = _data(args[0], self._data.dtype)
-      if v.ndim == 2 and onp.prod(onp.shape(v)) == 9:
+      v = self.data_from(args[0])
+      if Rank(v) == 2 and NumEl(v) == 9:
         rot = v
         self[ 0, 0 ] = rot[ 0, 0 ]
         self[ 0, 1 ] = rot[ 0, 1 ]
@@ -346,8 +582,8 @@ class MMat4x4(MData):
       else:
         self.assign(v)
     elif len(args) == 2:
-      rot = _data(args[0], self._data.dtype)
-      pos = _data(args[1], self._data.dtype)
+      rot = self.data_from(args[0])
+      pos = self.data_from(args[1])
       self[ 0, 0 ] = rot[ 0, 0 ]
       self[ 0, 1 ] = rot[ 0, 1 ]
       self[ 0, 2 ] = rot[ 0, 2 ]
@@ -396,56 +632,49 @@ class MMat4x4(MData):
     return r
 
   def get_at(self, i):
-    return self[i // 4, i % 4]
+    # return self[i // 4, i % 4]
+    return Flat(self._data)[i]
 
   def set_at(self, i, value):
+    i = operator.index(i)
     self[i // 4, i % 4] = value
 
   def __mul__(self, m):
-    return self.__class__(np.matmul(self._data, _data(m, self._data.dtype)))
+    return self.binary_op(MatMul, m)
 
-  def inverse(self, output=None):
-    if output is None:
-      r = self.__class__()
-      assert self.inverse(r)
-      return r
-    try:
-      m = np.linalg.inv(self._data)
-      output.assign(m)
-      return True
-    except np.linalg.LinAlgError: # TODO: What's the JAX equivalent of this?
-      return False
+  def inverse(self):
+    return self.unary_op(MatrixInverse)
 
-  def get_rotate(self, mat):
-    _data = self._data.reshape([-1])
-    xInvScale = inv_sqrt( _data[ 0 ]*_data[ 0 ] + _data[ 1 ]*_data[ 1 ] + _data[ 2 ]*_data[ 2 ] )
-    yInvScale = inv_sqrt( _data[ 4 ]*_data[ 4 ] + _data[ 5 ]*_data[ 5 ] + _data[ 6 ]*_data[ 6 ] )
-    zInvScale = inv_sqrt( _data[ 8 ]*_data[ 8 ] + _data[ 9 ]*_data[ 9 ] + _data[ 10 ]*_data[ 10 ] )
+  def get_rotate(self, mat: MMat3x3):
+    _data = Flat(self._data)
 
-    mat[ 0,0 ] = xInvScale*_data[ 0 ]
-    mat[ 0,1 ] = xInvScale*_data[ 1 ]
-    mat[ 0,2 ] = xInvScale*_data[ 2 ]
+    xInvScale = InvSqrt( _data[ 0 ]*_data[ 0 ] + _data[ 1 ]*_data[ 1 ] + _data[ 2 ]*_data[ 2 ] )
+    yInvScale = InvSqrt( _data[ 4 ]*_data[ 4 ] + _data[ 5 ]*_data[ 5 ] + _data[ 6 ]*_data[ 6 ] )
+    zInvScale = InvSqrt( _data[ 8 ]*_data[ 8 ] + _data[ 9 ]*_data[ 9 ] + _data[ 10 ]*_data[ 10 ] )
 
-    mat[ 1,0 ] = yInvScale*_data[ 4 ]
-    mat[ 1,1 ] = yInvScale*_data[ 5 ]
-    mat[ 1,2 ] = yInvScale*_data[ 6 ]
+    mat[ 0, 0 ] = xInvScale*_data[ 0 ]
+    mat[ 0, 1 ] = xInvScale*_data[ 1 ]
+    mat[ 0, 2 ] = xInvScale*_data[ 2 ]
 
-    mat[ 2,0 ] = zInvScale*_data[ 8 ]
-    mat[ 2,1 ] = zInvScale*_data[ 9 ]
-    mat[ 2,2 ] = zInvScale*_data[ 10 ]
+    mat[ 1, 0 ] = yInvScale*_data[ 4 ]
+    mat[ 1, 1 ] = yInvScale*_data[ 5 ]
+    mat[ 1, 2 ] = yInvScale*_data[ 6 ]
+
+    mat[ 2, 0 ] = zInvScale*_data[ 8 ]
+    mat[ 2, 1 ] = zInvScale*_data[ 9 ]
+    mat[ 2, 2 ] = zInvScale*_data[ 10 ]
 
   @property
   def rotate(self):
-    _data = self._data.reshape([-1])
-    xInvScale = inv_sqrt( _data[ 0 ]*_data[ 0 ] + _data[ 1 ]*_data[ 1 ] + _data[ 2 ]*_data[ 2 ] )
-    yInvScale = inv_sqrt( _data[ 4 ]*_data[ 4 ] + _data[ 5 ]*_data[ 5 ] + _data[ 6 ]*_data[ 6 ] )
-    zInvScale = inv_sqrt( _data[ 8 ]*_data[ 8 ] + _data[ 9 ]*_data[ 9 ] + _data[ 10 ]*_data[ 10 ] )
+    _data = Flat(self._data)
+    xInvScale = InvSqrt( _data[ 0 ]*_data[ 0 ] + _data[ 1 ]*_data[ 1 ] + _data[ 2 ]*_data[ 2 ] )
+    yInvScale = InvSqrt( _data[ 4 ]*_data[ 4 ] + _data[ 5 ]*_data[ 5 ] + _data[ 6 ]*_data[ 6 ] )
+    zInvScale = InvSqrt( _data[ 8 ]*_data[ 8 ] + _data[ 9 ]*_data[ 9 ] + _data[ 10 ]*_data[ 10 ] )
     return MMat3x3( xInvScale*_data[ 0 ], xInvScale*_data[ 1 ], xInvScale*_data[ 2 ],
                     yInvScale*_data[ 4 ], yInvScale*_data[ 5 ], yInvScale*_data[ 6 ],
                     zInvScale*_data[ 8 ], zInvScale*_data[ 9 ], zInvScale*_data[ 10 ] )
 
-  @rotate.setter
-  def rotate(self, rot):
+  def set_rotate(self, rot):
     scale = self.scale
     self[ 0, 0 ] = scale.x * rot[ 0, 0 ]
     self[ 0, 1 ] = scale.x * rot[ 0, 1 ]
@@ -458,25 +687,24 @@ class MMat4x4(MData):
     self[ 2, 2 ] = scale.z * rot[ 2, 2 ]
 
   def get_translate(self, pos):
-    _data = self._data.reshape([-1])
+    _data = Flat(self._data)
     pos.x = _data[ 3 ]
     pos.y = _data[ 7 ]
     pos.z = _data[ 11 ]
 
   @property
   def translate(self):
-    _data = self._data.reshape([-1])
+    _data = Flat(self._data)
     return MVec3( _data[ 3 ], _data[ 7 ], _data[ 11 ] )
 
-  @translate.setter
-  def translate(self, pos):
+  def set_translate(self, pos):
     self[ 0, 3 ] = pos.x
     self[ 1, 3 ] = pos.y
     self[ 2, 3 ] = pos.z
 
   def get_scale_sqr(self, scale):
     # extract the scale of the matrix.  Ensure that the rotational component of the matrix is of uniform scaling.
-    _data = self._data.reshape([-1])
+    _data = Flat(self._data)
     x = MVec3( _data[ 0 ], _data[ 1 ], _data[ 2 ] )
     y = MVec3( _data[ 4 ], _data[ 5 ], _data[ 6 ] )
     z = MVec3( _data[ 8 ], _data[ 9 ], _data[ 10 ] )
@@ -489,6 +717,7 @@ class MMat4x4(MData):
   @property
   def scale_sqr(self):
     # extract the scale of the matrix.  Ensure that the rotational component of the matrix is of uniform scaling.
+    _data = Flat(self._data)
     x = MVec3( _data[ 0 ], _data[ 1 ], _data[ 2 ] )
     y = MVec3( _data[ 4 ], _data[ 5 ], _data[ 6 ] )
     z = MVec3( _data[ 8 ], _data[ 9 ], _data[ 10 ] )
@@ -499,7 +728,7 @@ class MMat4x4(MData):
 
   def get_scale(self, scale):
     # extract the scale of the matrix.  Ensure that the rotational component of the matrix is of uniform scaling.
-    _data = self._data.reshape([-1])
+    _data = Flat(self._data)
     x = MVec3( _data[ 0 ], _data[ 1 ], _data[ 2 ] )
     y = MVec3( _data[ 4 ], _data[ 5 ], _data[ 6 ] )
     z = MVec3( _data[ 8 ], _data[ 9 ], _data[ 10 ] )
@@ -511,7 +740,7 @@ class MMat4x4(MData):
 
   @property
   def scale(self):
-    _data = self._data.reshape([-1])
+    _data = Flat(self._data)
     # extract the scale of the matrix.  Ensure that the rotational component of the matrix is of uniform scaling.
     x = MVec3( _data[ 0 ], _data[ 1 ], _data[ 2 ] )
     y = MVec3( _data[ 4 ], _data[ 5 ], _data[ 6 ] )
@@ -520,9 +749,10 @@ class MMat4x4(MData):
     # return the scales of the axes.
     return MVec3( x.mag, y.mag, z.mag )
 
-  @scale.setter
-  def scale(self, scale):
-    _data = self._data.reshape([-1])
+  def set_scale(self, scale):
+    scale = MVec3(scale)
+
+    _data = Flat(self._data)
     # orthonormalize the matrix axes.
     x = MVec3( _data[ 0 ], _data[ 1 ], _data[ 2 ] )
     y = MVec3( _data[ 4 ], _data[ 5 ], _data[ 6 ] )
@@ -547,6 +777,9 @@ class MMat4x4(MData):
     self[ 2, 2 ] = z.z
 
   def set_orientation(self, side, forward):
+    side = MVec3(side)
+    forward = MVec3(forward)
+
     # compute the new matrix axes.
     x = MVec3( side.normalized() )
     z = MVec3( forward.normalized() )
@@ -562,17 +795,28 @@ class MMat4x4(MData):
     # set them.
     self.set_axes( x, y, z )
 
+  def transform_coord(self, coord):
+    coord = self.data_from(coord)
+    _data = Flat(self._data)
+    x = _data[ 0 ] * coord[0] + _data[ 1 ] * coord[1] + _data[  2 ] * coord[2] + _data[ 3 ]
+    y = _data[ 4 ] * coord[0] + _data[ 5 ] * coord[1] + _data[  6 ] * coord[2] + _data[ 7 ]
+    z = _data[ 8 ] * coord[0] + _data[ 9 ] * coord[1] + _data[ 10 ] * coord[2] + _data[ 11 ]
+    invW = Inv( _data[ 12 ]*coord[0] + _data[ 13 ]*coord[1] + _data[ 14 ]*coord[2] + _data[ 15 ] )
+    return MVec3( x * invW, y * invW, z * invW )
+
   def transform_coord_no_persp(self, coord):
-    coord = _data(coord, self._data.dtype)
-    x = self.get_at( 0 ) * coord[0] + self.get_at( 1 ) * coord[1] + self.get_at(  2 ) * coord[2] + self.get_at( 3 )
-    y = self.get_at( 4 ) * coord[0] + self.get_at( 5 ) * coord[1] + self.get_at(  6 ) * coord[2] + self.get_at( 7 )
-    z = self.get_at( 8 ) * coord[0] + self.get_at( 9 ) * coord[1] + self.get_at( 10 ) * coord[2] + self.get_at( 11 )
+    coord = self.data_from(coord)
+    _data = Flat(self._data)
+    x = _data[ 0 ] * coord[0] + _data[ 1 ] * coord[1] + _data[  2 ] * coord[2] + _data[ 3 ]
+    y = _data[ 4 ] * coord[0] + _data[ 5 ] * coord[1] + _data[  6 ] * coord[2] + _data[ 7 ]
+    z = _data[ 8 ] * coord[0] + _data[ 9 ] * coord[1] + _data[ 10 ] * coord[2] + _data[ 11 ]
     return MVec3( x, y, z )
 
   def transform_coord_no_persp_fast(self, coord):
-    x = self.get_at( 0 ) * coord[0] + self.get_at( 1 ) * coord[1] + self.get_at(  2 ) * coord[2] + self.get_at( 3 )
-    y = self.get_at( 4 ) * coord[0] + self.get_at( 5 ) * coord[1] + self.get_at(  6 ) * coord[2] + self.get_at( 7 )
-    z = self.get_at( 8 ) * coord[0] + self.get_at( 9 ) * coord[1] + self.get_at( 10 ) * coord[2] + self.get_at( 11 )
+    _data = Flat(self._data)
+    x = _data[ 0 ] * coord[0] + _data[ 1 ] * coord[1] + _data[  2 ] * coord[2] + _data[ 3 ]
+    y = _data[ 4 ] * coord[0] + _data[ 5 ] * coord[1] + _data[  6 ] * coord[2] + _data[ 7 ]
+    z = _data[ 8 ] * coord[0] + _data[ 9 ] * coord[1] + _data[ 10 ] * coord[2] + _data[ 11 ]
     coord.x = x
     coord.y = y
     coord.z = z
@@ -581,30 +825,18 @@ class MMat4x4(MData):
 class MPlane:
   def __init__(self, *args):
     self._normal = MVec3(0.0, 1.0, 0.0)
-    self._d = 0.0
+    self._d = V(0.0)
     if len(args) == 1:
-      v = args[0]
-      if isinstance(v, MPlane):
-        self._normal[:] = v._normal[:]
-        self._d = v._d
-      else:
-        raise ValueError("Unknown argument type {}".format(v))
+      self.assign(args[0])
     elif len(args) == 2:
-      #if not isinstance(args[0], MVec3):
-      #  raise ValueError("Argument 0: expected MVec3, got {}".format(args[0]))
       self._normal.assign(args[0])
       self._normal.normalize()
-      if isinstance(args[1], float) or isinstance(args[1], int):
-        self._d = args[1]
+      if IsVector(args[1]):
+        self.set_d(-self._normal.dot(args[1]))
       else:
-        point = _data(args[1], self._normal._data.dtype)
-        self._d = -self._normal.dot(point)
+        self.set_d(args[1])
     elif len(args) != 0:
       raise ValueError("Bad arguments: {}".format(args))
-
-  def assign(self, rhs):
-    self._normal.assign(rhs._normal)
-    self._d = rhs._d
 
   def __repr__(self):
     return "<MPlane normal=({}, {}, {}) d={}>".format(self._normal.x, self._normal.y, self._normal.z, self._d)
@@ -613,18 +845,19 @@ class MPlane:
   def normal(self):
     return self._normal
 
-  @normal.setter
-  def normal(self, value):
-    self._normal.assign(value)
-
   @property
   def d(self):
     return self._d
 
-  @d.setter
-  def d(self, value):
-    assert isinstance(value, float) or isinstance(value, int)
-    self._d = float(value)
+  def set_normal(self, value):
+    self._normal.assign(value)
+
+  def set_d(self, value):
+    self._d = V(value)
+
+  def assign(self, rhs):
+    self.set_normal(rhs.normal)
+    self.set_d(rhs.d)
 
   def dist(self, point):
     return self._normal.dot(point) + self._d
