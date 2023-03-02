@@ -5,8 +5,10 @@ import OpenGL.GL as gl
 
 class Window:
   """Create a window for rendering."""
+  width: int
+  height: int
 
-  def __init__(self, width, height, title):
+  def __init__(self, width: int, height: int, title: str):
     self.width = width
     self.height = height
 

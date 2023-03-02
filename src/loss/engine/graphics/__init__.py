@@ -191,7 +191,7 @@ class GrProjection:
 
 class GrCamera:
   def __init__(self):
-    self._proj = GrProjection.perspective( m.deg_to_rad(90.0), 1000.0, 1.0, m.MPlane( m.MVec3( 0.0, 0.0, -1.0 ), m.MVec3( 0.0, 0.0, -1.0 ) ) )
+    self._proj = GrProjection.perspective( m.DegToRad(90.0), 1000.0, 1.0, m.MPlane( m.MVec3( 0.0, 0.0, -1.0 ), m.MVec3( 0.0, 0.0, -1.0 ) ) )
     self._pos = m.MVec3()
     self._rot = m.MMat3x3()
     self._far_cull = 1000.0
@@ -203,9 +203,9 @@ class GrCamera:
     self._dirty = True
 
   def assign(self, rhs):
-    self.pos = rhs.pos
-    self.rot = rhs.rot
-    self.proj = rhs.proj
+    self._pos.assign(rhs.pos)
+    self._rot.assign(rhs.rot)
+    self._proj.assign(rhs.proj)
 
   @property
   def pos(self):
@@ -307,8 +307,9 @@ class GrCamera:
 
     # create the view-proj matrix.
     self._view_proj_matrix = projMatrix * self._view_matrix
-    valid = self._view_matrix.inverse( self._inv_view_matrix )
-    assert valid
+    # valid = self._view_matrix.inverse( self._inv_view_matrix )
+    # assert valid
+    self._inv_view_matrix = self._view_matrix.inverse()
 
     # reflection = False
     # # check to see if the view matrix is a reflection.

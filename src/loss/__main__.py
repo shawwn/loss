@@ -1,4 +1,6 @@
 from loss.engine import window
+from loss.engine.common import math as m
+from loss.engine import graphics as g
 import time
 
 class App:
@@ -8,11 +10,17 @@ class App:
     self.last_time = self.start_time
     self.fps_count = 0
     self.fps_time = self.last_time
+    self.cam = g.GrCamera()
     self.win.loop(self)
 
   def __call__(self):
-    theta = 0.01 * (time.time() - self.start_time)
-    # wvp = utils.rotation(0., theta, 0.0)
+    cur_time = time.time()
+    dtime = cur_time - self.last_time
+
+    theta = 0.01 * (cur_time - self.start_time)
+    rot = m.MMat3x3.from_euler_yxz(theta, 0.0, 0.0)
+    self.cam.set_rot(rot)
+
 
     # self.clear([0.1, 0.1, 0.1])
     # self.draw(self.indices,
@@ -24,14 +32,12 @@ class App:
     # image = self.rend.execute()
 
     # Display frames per second
-    cur_time = time.time()
-    dtime = cur_time - self.last_time
     self.last_time = cur_time
     self.fps_count += 1
     if cur_time - self.fps_time > 1.0:
-      # fps = 1.0 / float(dtime + 1e-9)
-      fps = self.fps_count
-      print("fps: %.1f" % fps)
+      print(f"fps: {self.fps_count}")
+      print([m.RadToDeg(v) for v in rot.to_euler_yxz()])
+      print(repr(self.cam.view_matrix))
       self.fps_count = 0
       self.fps_time = cur_time
 

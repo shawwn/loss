@@ -1,8 +1,6 @@
 from __future__ import annotations
-import numpy as onp
 import jax.numpy as np
-import math
-import functools
+import math as _math
 import operator
 
 
@@ -50,7 +48,8 @@ def DegToRad(deg): return deg * (Pi() / 180.0)
 def RadToDeg(rad): return rad * (180.0 / Pi())
 
 def ShapeOf(v): return np.shape(v)
-def NumEl(v): return onp.prod(ShapeOf(v))
+def Rank(v): return len(ShapeOf(v))
+def NumEl(v): return _math.prod(ShapeOf(v))
 
 def IsVector(v): return hasattr(v, 'x') and hasattr(v, 'y')
 
@@ -90,8 +89,8 @@ class MData:
     return GetData(v, self.dtype)
 
   @classmethod
-  def new(cls, x):
-    return cls(x)
+  def new(cls, *args):
+    return cls(*args)
 
   def binary_op(self, op, v):
     return self.new(op(self._data, self.data_from(v)))
@@ -108,8 +107,8 @@ class MData:
   def __radd__(self, v): return self.binary_op(Add, v)
   def __rsub__(self, v): return self.binary_op(Sub, v)
   def __rmul__(self, v): return self.binary_op(Mul, v)
-  def __neg__(self, v): return self.unary_op(Neg)
-  def __pos__(self, v): return self.unary_op(Pos)
+  def __neg__(self): return self.unary_op(Neg)
+  def __pos__(self): return self.unary_op(Pos)
   def __abs__(self): return self.unary_op(Abs)
 
   def __eq__(self, other):
