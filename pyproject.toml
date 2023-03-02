@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "loss"
-version = "0.1.0"
+version = "0.1.1"
 description = "Loss"
 authors = ["Shawn Presser <shawnpresser@gmail.com>"]
 license = "MIT"
@@ -26,6 +26,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.semantic_release]
 version_toml = "pyproject.toml:tool.poetry.version"
+version_source = "tag"
 branch = "main"
 include_additional_files = "setup.py"
 major_on_zero = false
