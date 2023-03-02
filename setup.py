@@ -11,7 +11,7 @@ package_dir = \
 {'': 'src'}
 
 packages = \
-['loss']
+['loss', 'loss.engine', 'loss.engine.common', 'loss.engine.graphics']
 
 package_data = \
 {'': ['*']}
