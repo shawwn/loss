@@ -37,7 +37,7 @@ class App:
     if cur_time - self.fps_time > 1.0:
       print(f"fps: {self.fps_count}")
       print([m.RadToDeg(v) for v in rot.to_euler_yxz()])
-      print(repr(self.cam.view_matrix))
+      # print(repr(self.cam.view_matrix))
       self.fps_count = 0
       self.fps_time = cur_time
 

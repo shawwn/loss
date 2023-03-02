@@ -20,6 +20,12 @@ class Window:
       glfw.terminate()
       return
 
+    # Enable key events
+    glfw.set_input_mode(self.win, glfw.STICKY_KEYS, gl.GL_TRUE)
+
+    # Enable key event callback
+    glfw.set_key_callback(self.win, self.key_event)
+
     zeros = np.zeros([height, width, 3], dtype=np.uint8)
 
     glfw.make_context_current(self.win)
@@ -34,9 +40,12 @@ class Window:
     gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER,
                        gl.GL_LINEAR)
 
+  def key_event(self, window, key, scancode, action, mods):
+    print(f"{key=} {scancode=} {action=} {mods=}")
+
   def loop(self, update_fn):
     """Loop."""
-    while not glfw.window_should_close(self.win):
+    while glfw.get_key(self.win, glfw.KEY_ESCAPE) != glfw.PRESS and not glfw.window_should_close(self.win):
       image = update_fn()
 
       gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
